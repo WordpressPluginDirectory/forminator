@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Forminator
- * Version: 1.30.2
+ * Version: 1.33
  * Plugin URI:  https://wpmudev.com/project/forminator/
  * Description: Capture user information (as detailed as you like), engage users with interactive polls that show real-time results and graphs, “no wrong answer” Facebook-style quizzes and knowledge tests.
  * Author: WPMU DEV
@@ -10,7 +10,6 @@
  * Requires PHP: 7.4
  * Text Domain: forminator
  * Domain Path: /languages/
- *
  */
 /*
 Copyright 2009-2024 Incsub (http://incsub.com)
@@ -428,6 +427,8 @@ if ( ! class_exists( 'Forminator' ) ) {
 
 			// Prefixed vendor autoload.
 			include_once forminator_plugin_dir() . 'library/external/vendor/autoload.php';
+
+			include_once forminator_plugin_dir() . 'library/lib/analytics/autoload.php';
 
 			if ( ! FORMINATOR_PRO ) {
 

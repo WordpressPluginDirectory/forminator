@@ -43,7 +43,7 @@
 		init: function () {
 			var self = this,
 				form = this.$el,
-				$forminatorFields = this.$el.find( ".forminator-field input, .forminator-row input[type=hidden], .forminator-field select, .forminator-field textarea, .forminator-field-signature")
+				$forminatorFields = this.$el.find( ".forminator-field input, .forminator-row input[type=hidden], .forminator-field select, .forminator-field textarea, .forminator-field-signature, .forminator-rating")
 				;
 
 			// Duplicate rules for new repeated Group fields.
@@ -308,6 +308,11 @@
                 }
 			} else if ( this.field_has_inputMask( $element ) ) {
 				value = parseFloat( $element.inputmask('unmaskedvalue').replace(',','.') );
+				if ( 0 <= element_id.indexOf( 'calculation-' ) ) {
+					return value;
+				}
+			} else if ( this.field_is_rating( $element ) ) {
+				value = (typeof value === 'string' && value.split("/")[0]) || 0;
 			}
 			if (!value) return "";
 
@@ -483,6 +488,19 @@
 			return is_upload;
 		},
 
+		field_is_rating: function ($element) {
+			var is_rating = false;
+			$element.each(function () {
+				if ( $(this).hasClass('forminator-rating') ) {
+					is_rating = true;
+					//break
+					return false;
+				}
+			});
+
+			return is_rating;
+		},
+
 		// used in forminatorFrontCalculate
 		get_form_field: function (element_id) {
 			let $form = this.$el;
@@ -507,9 +525,12 @@
 								//find element by select name
 								$element = $form.find('select[name="' + element_id + '"]');
 								if ($element.length === 0) {
-									//find element by direct id (for name field mostly)
-									//will work for all field with element_id-[somestring]
-									$element = $form.find('#' + element_id);
+									$element = $form.find('select[name="' + element_id + '[]"]');
+									if ($element.length === 0) {
+										//find element by direct id (for name field mostly)
+										//will work for all field with element_id-[somestring]
+										$element = $form.find('#' + element_id);
+									}
 								}
 							}
 						}
@@ -541,9 +562,12 @@
 								//find element by select name
 								$element = this.$el.find('select[name="' + element_id + '"]');
 								if ($element.length === 0) {
-									//find element by direct id (for name field mostly)
-									//will work for all field with element_id-[somestring]
-									$element = this.$el.find('#' + element_id);
+									$element = this.$el.find('select[name="' + element_id + '[]"]');
+									if ($element.length === 0) {
+										//find element by direct id (for name field mostly)
+										//will work for all field with element_id-[somestring]
+										$element = this.$el.find('#' + element_id);
+									}
 								}
 							}
 						}
@@ -841,6 +865,7 @@
 					}
 					setTimeout(
 						function() {
+							$pagination_field = self.$el.find( submit_selector );
 							if ( 'submit' === element_id ) {
 								$pagination_field.removeClass('forminator-hidden');
 							}
@@ -855,6 +880,7 @@
 					$column_field.addClass('forminator-hidden');
 					setTimeout(
 						function() {
+							$pagination_field = self.$el.find( submit_selector );
 							if ( 'submit' === element_id ) {
 								$pagination_field.addClass('forminator-hidden');
 							}
@@ -899,6 +925,7 @@
 					}
 					setTimeout(
 						function() {
+							$pagination_field = self.$el.find( submit_selector );
 							if ( 'submit' === element_id ) {
 								$pagination_field.addClass('forminator-hidden');
 							}
@@ -924,6 +951,7 @@
 					}
 					setTimeout(
 						function() {
+							$pagination_field = self.$el.find( submit_selector );
 							if ( 'submit' === element_id ) {
 								$pagination_field.removeClass('forminator-hidden');
 							}
