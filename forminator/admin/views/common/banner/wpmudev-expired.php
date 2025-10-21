@@ -1,10 +1,11 @@
 <?php
 /**
- * Template admin/views/templates/banner/wpmudev-expired.php
+ * Template admin/views/common/banner/wpmudev-expired.php
  *
  * @package Forminator
  */
 
+$current_page       = filter_input( INPUT_GET, 'page' );
 $current_login_user = wp_get_current_user(); ?>
 <div class="sui-box forminator-banner">
 	<div class="sui-box forminator-banner-content">
@@ -18,11 +19,19 @@ $current_login_user = wp_get_current_user(); ?>
 			<h2><?php esc_html_e( 'WPMU DEV Membership Expired', 'forminator' ); ?></h2>
 			<p>
 				<?php
-				printf(
-					/* translators: %s - current user display name */
-					esc_html__( 'Hey %s, your WPMU DEV membership has expired. You need an active membership to use the preset templates. Renew your membership to get instant access to our pre-designed form templates.', 'forminator' ),
-					esc_html( $current_login_user->display_name )
-				);
+				if ( 'forminator-addons' === $current_page ) {
+					printf(
+						/* translators: %s - current user display name */
+						esc_html__( 'Hey %s, your WPMU DEV membership has expired. You need an active membership to use all our Add-ons. Renew your membership to get instant access.', 'forminator' ),
+						esc_html( $current_login_user->display_name )
+					);
+				} else {
+					printf(
+						/* translators: %s - current user display name */
+						esc_html__( 'Hey %s, your WPMU DEV membership has expired. You need an active membership to use the preset templates. Renew your membership to get instant access to our pre-designed form templates.', 'forminator' ),
+						esc_html( $current_login_user->display_name )
+					);
+				}
 				?>
 			</p>
 			<p>

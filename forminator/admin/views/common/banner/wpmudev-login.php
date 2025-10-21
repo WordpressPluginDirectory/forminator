@@ -1,10 +1,11 @@
 <?php
 /**
- * Template admin/views/templates/banner/wpmudev-login.php
+ * Template admin/views/common/banner/wpmudev-login.php
  *
  * @package Forminator
  */
 
+$current_page = filter_input( INPUT_GET, 'page' );
 ?>
 <div class="sui-box forminator-banner">
 	<div class="sui-box forminator-banner-content">
@@ -17,7 +18,13 @@
 		<div>
 			<h2><?php esc_html_e( 'Log In to Your WPMU DEV Account', 'forminator' ); ?></h2>
 			<p>
-				<?php esc_html_e( 'Looks like your site is not connected to WPMU DEV. Log in to your WPMU DEV account to unlock the complete list of preset templates.', 'forminator' ); ?>
+				<?php
+				if ( 'forminator-addons' === $current_page ) {
+					esc_html_e( 'Looks like your site is not connected to WPMU DEV. Log in to your WPMU DEV account to manage add-ons.', 'forminator' );
+				} else {
+					esc_html_e( 'Looks like your site is not connected to WPMU DEV. Log in to your WPMU DEV account to unlock the complete list of preset templates.', 'forminator' );
+				}
+				?>
 			</p>
 			<p>
 				<a href="<?php echo esc_url( network_admin_url( 'admin.php?page=wpmudev' ) ); ?>" target="_blank" class="sui-button sui-button-icon-left sui-button-blue">
