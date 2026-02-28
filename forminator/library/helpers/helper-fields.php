@@ -196,6 +196,49 @@ function forminator_decode_html_entity( $fields ) {
 }
 
 /**
+ * Sort fields so that grouped fields appear immediately after their parent group.
+ *
+ * @since 1.51.0
+ * @param array $fields Array of field arrays.
+ * @return array Sorted fields array.
+ */
+function forminator_sort_fields_with_groups( array $fields ): array {
+	if ( empty( $fields ) ) {
+		return $fields;
+	}
+
+	$top_level = array();
+	$children  = array();
+
+	// Separate top-level fields from grouped (child) fields.
+	foreach ( $fields as $field ) {
+		$parent_group = $field['parent_group'] ?? '';
+		if ( '' === $parent_group ) {
+			$top_level[] = $field;
+		} else {
+			$children[ $parent_group ][] = $field;
+		}
+	}
+
+	// No need to sort if there are no grouped fields.
+	if ( empty( $children ) ) {
+		return $top_level;
+	}
+
+	// Build sorted array: each group field followed by its children.
+	$sorted = array();
+	foreach ( $top_level as $field ) {
+		$sorted[] = $field;
+		$field_id = $field['element_id'] ?? '';
+		if ( isset( $children[ $field_id ] ) ) {
+			array_push( $sorted, ...$children[ $field_id ] );
+		}
+	}
+
+	return $sorted;
+}
+
+/**
  * Sanitize text area
  *
  * @param string $field Field value.
@@ -533,6 +576,29 @@ function forminator_get_name_prefixes() {
 }
 
 /**
+ * Translate name prefix
+ *
+ * @param string                     $prefix Prefix.
+ * @param Forminator_Form_Model|null $form_model Form model.
+ * @return string
+ */
+function forminator_translate_name_prefix( $prefix, $form_model = null ) {
+	if ( is_null( $form_model ) ) {
+		return $prefix;
+	}
+	$print_value = ! empty( $form_model->settings['print_value'] )
+			? filter_var( $form_model->settings['print_value'], FILTER_VALIDATE_BOOLEAN ) : false;
+	if ( $print_value ) {
+		return $prefix;
+	}
+	$prefixes = forminator_get_name_prefixes();
+	if ( isset( $prefixes[ $prefix ] ) ) {
+		return $prefixes[ $prefix ];
+	}
+	return $prefix;
+}
+
+/**
  * Return field id by string
  *
  * @since 1.0
@@ -807,7 +873,8 @@ function forminator_replace_field_data( $custom_form, $element_id, $data, $is_pd
 			}
 
 			if ( ! empty( $field_options ) ) {
-				$display_items = array();
+				$display_items              = array();
+				$email_image_display_option = $custom_form->settings['email_image_display_option'] ?? 'preview';
 				foreach ( $selected_values as $selected_value ) {
 					$selected_value = stripslashes( $selected_value );
 
@@ -826,7 +893,7 @@ function forminator_replace_field_data( $custom_form, $element_id, $data, $is_pd
 						}
 
 						// Apply image markup if enabled and this is for email.
-						if ( $enable_images && $is_email && ! empty( $option_data['image'] ) ) {
+						if ( $enable_images && $is_email && 'preview' === $email_image_display_option && ! empty( $option_data['image'] ) ) {
 							$display_items[] = forminator_get_email_image_markup( $option_data['image'], $display_text, $display_text, 'field' );
 						} else {
 							$display_items[] = $display_text;
@@ -1076,6 +1143,9 @@ function forminator_prepare_formatted_form_entry(
 					$html .= '<b>' . Forminator_Field::convert_markdown( $label ) . '</b><br/>';
 				}
 				if ( isset( $value ) && '' !== $value ) {
+					if ( 'textarea' === $field_type ) {
+						$value = forminator_replace_linebreaks( $value );
+					}
 					$html .= $value . '<br/>';
 				}
 				$html .= '</li>';
@@ -1461,6 +1531,8 @@ function render_entry( $item, $column_name, $field = null, $type = '', $remove_e
 			$countries    = forminator_get_countries_list();
 
 			if ( ! empty( $data ) ) {
+				$custom_form_model          = Forminator_Base_Form_Model::get_model( $item->form_id );
+				$email_image_display_option = $custom_form_model->settings['email_image_display_option'] ?? 'preview';
 				foreach ( $data as $key => $value ) {
 					if ( is_array( $value ) ) {
 						if ( 'file' === $key && isset( $value['file_url'] ) ) {
@@ -1480,7 +1552,7 @@ function render_entry( $item, $column_name, $field = null, $type = '', $remove_e
 							foreach ( $file_urls as $index => $file_url ) {
 								$file_name = basename( $file_url );
 
-								if ( $is_email && forminator_can_display_as_image( $file_url ) ) {
+								if ( $is_email && 'preview' === $email_image_display_option && forminator_can_display_as_image( $file_url ) ) {
 									// For email notifications, display image if possible.
 									$output .= forminator_get_email_image_markup( $file_url, $file_name, '', 'upload' );
 								} else {

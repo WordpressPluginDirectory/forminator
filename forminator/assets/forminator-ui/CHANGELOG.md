@@ -1,5 +1,30 @@
 # Change Log
 
+## 1.12.41
+
+### Patch Changes
+
+- 492a637: Geolocation dropdown style improvments.
+
+## 1.12.40
+
+### Patch Changes
+
+- 62d68e5: Add geolocation dropdown styles
+
+## 1.12.39
+
+### Patch Changes
+
+- 3810db1: fix: country dropdown layout is broken in preview
+- 497f4ab: fix: field and label description issue in material design
+
+## 1.12.38
+
+### Patch Changes
+
+- c5a14e2: fix: labels overlap with description in material design
+
 ## 1.12.37
 
 ### Patch Changes

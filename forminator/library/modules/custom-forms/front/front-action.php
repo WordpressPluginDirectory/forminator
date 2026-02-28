@@ -173,8 +173,12 @@ class Forminator_CForm_Front_Action extends Forminator_Front_Action {
 			$request = array_merge( array( 'intent' => 'CAPTURE' ), $data['form_data'] );
 			$request = apply_filters( 'forminator_paypal_create_order_request', $request, $data );
 
-			if ( empty( $request['payer'] ) ) {
+			if ( empty( $request['payer'] ) || empty( array_filter( $request['payer'] ) ) ) {
 				unset( $request['payer'] );
+			}
+
+			if ( isset( $request['payer']['name'] ) && empty( $request['payer']['name'] ) ) {
+				unset( $request['payer']['name'] );
 			}
 
 			$order = $paypal->create_order( $request, $data['mode'] );
@@ -197,6 +201,11 @@ class Forminator_CForm_Front_Action extends Forminator_Front_Action {
 	 * @since 1.7.3
 	 */
 	public function update_payment_amount() {
+		$form_id = Forminator_Core::sanitize_text_field( 'form_id' );
+		if ( empty( $form_id ) || ! $this->validate_ajax( 'forminator_submit_form' . $form_id, 'POST', 'forminator_nonce' ) ) {
+			wp_send_json_error( esc_html__( 'Invalid nonce. Please refresh your browser.', 'forminator' ) );
+		}
+
 		$this->init_properties();
 
 		self::check_fields_visibility();
@@ -623,19 +632,17 @@ class Forminator_CForm_Front_Action extends Forminator_Front_Action {
 	 * @return void
 	 */
 	private static function maybe_handle_custom_option( $field_array ) {
-		if ( self::$is_draft ) {
-			$field_type = $field_array['type'];
-			$element_id = $field_array['element_id'];
-			if ( in_array( $field_type, array( 'radio', 'select', 'checkbox' ), true ) && isset( self::$prepared_data[ $element_id ] ) ) {
-				$selected_values      = is_array( self::$prepared_data[ $element_id ] ) ? self::$prepared_data[ $element_id ] : array( self::$prepared_data[ $element_id ] );
-				$enable_custom_option = Forminator_Field::get_property( 'enable_custom_option', $field_array, false );
-				if ( $enable_custom_option && ! empty( $selected_values ) ) {
-					if ( in_array( 'custom_option', $selected_values, true ) ) {
-						self::$info['field_data_array'][] = array(
-							'name'  => 'custom-' . $element_id,
-							'value' => isset( self::$prepared_data[ 'custom-' . $element_id ] ) ? self::$prepared_data[ 'custom-' . $element_id ] : '',
-						);
-					}
+		$field_type = $field_array['type'];
+		$element_id = $field_array['element_id'];
+		if ( in_array( $field_type, array( 'radio', 'select', 'checkbox' ), true ) && isset( self::$prepared_data[ $element_id ] ) ) {
+			$selected_values      = is_array( self::$prepared_data[ $element_id ] ) ? self::$prepared_data[ $element_id ] : array( self::$prepared_data[ $element_id ] );
+			$enable_custom_option = Forminator_Field::get_property( 'enable_custom_option', $field_array, false );
+			if ( $enable_custom_option && ! empty( $selected_values ) ) {
+				if ( in_array( 'custom_option', $selected_values, true ) ) {
+					self::$info['field_data_array'][] = array(
+						'name'  => 'custom-' . $element_id,
+						'value' => isset( self::$prepared_data[ 'custom-' . $element_id ] ) ? self::$prepared_data[ 'custom-' . $element_id ] : '',
+					);
 				}
 			}
 		}
@@ -980,21 +987,19 @@ class Forminator_CForm_Front_Action extends Forminator_Front_Action {
 
 			// Don't process confirm if status is requires_capture as it confirmed already.
 			if ( 'requires_confirmation' === $intent->status ) {
-				$result = $intent->confirm(
+				$intent = $intent->confirm(
 					array(
 						'return_url' => Forminator_Stripe::get_return_url(),
 					)
 				);
-			} else {
-				$result = $intent;
 			}
 
 			// If we have 3D security on the card return for verification.
-			if ( 'requires_action' === $result->status || 'requires_confirmation' === $result->status ) {
-				$error_data = self::handle_failed_stripe_response( $result, $entry );
+			if ( 'requires_action' === $intent->status || 'requires_confirmation' === $intent->status || 'requires_payment_method' === $intent->status ) {
+				$error_data = self::handle_failed_stripe_response( $intent, $entry );
 
 				self::$response_attrs           = array_merge( self::$response_attrs, $error_data );
-				self::$response_attrs['secret'] = $result->client_secret;
+				self::$response_attrs['secret'] = $intent->client_secret;
 				return new WP_Error( 'forminator_stripe_error', esc_html( $error_data['message'] ) );
 			}
 		} catch ( Exception $e ) {
@@ -1039,7 +1044,10 @@ class Forminator_CForm_Front_Action extends Forminator_Front_Action {
 		} else {
 			$error_data['stripe3d'] = true;
 
-			$error_data['message'] = __( 'This payment requires 3D Secure authentication! Please follow the instructions.', 'forminator' );
+			if ( 'requires_payment_method' !== $result->status ) {
+				// Most likely it's Blik payment method if the status is requires_payment_method - not 3D Secure.
+				$error_data['message'] = __( 'This payment requires 3D Secure authentication! Please follow the instructions.', 'forminator' );
+			}
 		}
 
 		return apply_filters( 'forminator_stripe_next_action_after_payment_confirmation', $error_data, $result );
@@ -1717,6 +1725,13 @@ class Forminator_CForm_Front_Action extends Forminator_Front_Action {
 					|| strpos( $slug, 'checkbox' ) !== false
 					) {
 				$data[ $key ]['value'] = forminator_replace_form_data( '{' . $slug . '}', self::$module_object, $entry, true );
+			}
+			if ( strpos( $slug, 'name' ) !== false ) {
+				$full_name = $value['value'] ?? array();
+				if ( isset( $full_name['prefix'] ) ) {
+					$full_name['prefix']   = forminator_translate_name_prefix( $full_name['prefix'], self::$module_object );
+					$data[ $key ]['value'] = $full_name;
+				}
 			}
 		}
 
