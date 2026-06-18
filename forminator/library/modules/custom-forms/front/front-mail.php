@@ -91,7 +91,9 @@ class Forminator_CForm_Front_Mail extends Forminator_Mail {
 		$form_fields = $custom_form->get_fields();
 		foreach ( $form_fields as $form_field ) {
 			$files = self::add_field_files( $files, $form_field, $entry );
-			if ( ! empty( $form_field->parent_group ) && ! empty( Forminator_CForm_Front_Action::$prepared_data[ $form_field->parent_group . '-copies' ] ) ) {
+			if ( ! empty( $form_field->parent_group ) && ! empty( Forminator_CForm_Front_Action::$prepared_data[ $form_field->parent_group . '-copies' ] )
+				&& is_array( Forminator_CForm_Front_Action::$prepared_data[ $form_field->parent_group . '-copies' ] )
+			) {
 				foreach ( Forminator_CForm_Front_Action::$prepared_data[ $form_field->parent_group . '-copies' ] as $prefix ) {
 					$clonned_form_field       = clone $form_field;
 					$clonned_form_field->slug = $form_field->slug . '-' . $prefix;
@@ -203,10 +205,16 @@ class Forminator_CForm_Front_Mail extends Forminator_Mail {
 				$data['current_url'] = forminator_get_current_url();
 			}
 
-			$files       = $this->get_files( $custom_form, $entry );
-			$exceeded    = $this->is_attachment_size_limit_exceeded( $files );
-			$attachments = $exceeded ? array() : $files;
-			$entry       = $this->maybe_remove_stripe_quantity( $entry );
+			// If it's to send an email draft link, we don't have files, so skip retrieving files and size checks.
+			if ( ! empty( $submitted_data['action'] ) && 'forminator_email_draft_link' === $submitted_data['action'] ) {
+				$attachments = array();
+				$exceeded    = false;
+			} else {
+				$files       = $this->get_files( $custom_form, $entry );
+				$exceeded    = $this->is_attachment_size_limit_exceeded( $files );
+				$attachments = $exceeded ? array() : $files;
+			}
+			$entry = $this->maybe_remove_stripe_quantity( $entry );
 
 			/**
 			 * Message data filter
@@ -244,6 +252,35 @@ class Forminator_CForm_Front_Mail extends Forminator_Mail {
 						}
 					}
 				}
+			}
+
+			/**
+			 * Exclude fields from the email based on their slugs or field types.
+			 *
+			 * @since 1.54.0
+			 *
+			 * @param array $exclude_fields An array of field slugs or types to be excluded from the email.
+			 * @param Forminator_Form_Model $custom_form Form model.
+			 * @param array                        $data Post data.
+			 * @param Forminator_Form_Entry_Model  $entry Saved entry.
+			 *
+			 * @return array $exclude_fields
+			 */
+			$exclude_fields = apply_filters( 'forminator_custom_form_mail_exclude_fields', array(), $custom_form, $data, $entry );
+			$fields         = $custom_form->fields;
+			if ( ! empty( $fields ) && ! empty( $exclude_fields ) && is_array( $exclude_fields ) ) {
+				$custom_form->fields = array_filter(
+					$fields,
+					function ( $field ) use ( $exclude_fields ) {
+						foreach ( $exclude_fields as $exclude_field ) {
+							// Exclude the field if its slug matches the excluded field or starts with the excluded field followed by a hyphen (to account for copies and field types).
+							if ( $field->slug === $exclude_field || 0 === strpos( $field->slug, $exclude_field . '-' ) ) {
+								return false;
+							}
+						}
+						return true;
+					}
+				);
 			}
 
 			/**
@@ -723,12 +760,13 @@ class Forminator_CForm_Front_Mail extends Forminator_Mail {
 	 *
 	 * @since 1.0
 	 *
-	 * @param array $condition Condition.
-	 * @param mixed $module Module.
+	 * @param array  $condition Condition.
+	 * @param mixed  $module Module.
+	 * @param string $result_slug Result slug.
 	 *
 	 * @return bool
 	 */
-	public function is_routing( $condition, $module ) {
+	public function is_routing( $condition, $module, $result_slug = '' ) {
 		return Forminator_Field::is_condition_matched( $condition );
 	}
 

@@ -188,14 +188,15 @@ class Forminator_Export {
 		$action = Forminator_Core::sanitize_text_field( 'action' );
 		if ( 'forminator_export_entries' === $action ) {
 			$nonce = Forminator_Core::sanitize_text_field( '_forminator_nonce' );
-			if ( ! $nonce || ! wp_verify_nonce( $nonce, 'forminator_export' ) ) {
 
-				$redirect = add_query_arg(
-					array(
-						'err_msg' => rawurlencode( esc_html__( 'Invalid request, you are not allowed to do that action.', 'forminator' ) ),
-					)
-				);
+			$redirect = add_query_arg(
+				array(
+					'err_msg' => rawurlencode( esc_html__( 'Invalid request, you are not allowed to do that action.', 'forminator' ) ),
+				)
+			);
 
+			if ( ! $nonce || ! wp_verify_nonce( $nonce, 'forminator_export' )
+					|| ! forminator_is_user_allowed( 'forminator-entries' ) ) {
 				wp_safe_redirect( $redirect );
 				exit;
 			}
@@ -474,6 +475,7 @@ class Forminator_Export {
 				}
 
 				$headers = array(
+					esc_html__( 'Submission ID', 'forminator' ),
 					esc_html__( 'Date', 'forminator' ),
 					esc_html__( 'Question', 'forminator' ),
 					esc_html__( 'Answer', 'forminator' ),
@@ -528,6 +530,7 @@ class Forminator_Export {
 							$i = 1;
 							foreach ( $meta['answers'] as $answer ) {
 								$row   = array();
+								$row[] = 1 === $i ? $entry->entry_id : '';
 								$row[] = 1 === $i ? $entry->time_created : '';
 								$row[] = ! empty( $answer['question'] ) ? sprintf( '"%s"', $answer['question'] ) : '';
 								$row[] = $answer['answer'];
@@ -569,10 +572,22 @@ class Forminator_Export {
 							$i = 1;
 							foreach ( $meta as $answer ) {
 								$row   = array();
+								$row[] = 1 === $i ? $entry->entry_id : '';
 								$row[] = 1 === $i ? $entry->time_created : '';
 								$row[] = ! empty( $answer['question'] ) ? sprintf( '"%s"', $answer['question'] ) : '';
-								$row[] = $answer['answer'];
-								if ( ! empty( $answer['answer'] ) ) {
+								if ( isset( $answer['answer'] ) ) {
+									$user_answer = $answer['answer'];
+								} elseif ( isset( $answer['answers'] ) ) {
+									$user_answer = $answer['answers'];
+								} else {
+									$user_answer = '';
+								}
+								if ( is_array( $user_answer ) ) {
+									$user_answer = implode( ', ', $user_answer );
+								}
+								$row[] = $user_answer;
+
+								if ( ! empty( $user_answer ) ) {
 									$row[] = ( ( $answer['isCorrect'] ) ? esc_html__( 'Correct', 'forminator' ) : esc_html__( 'Incorrect', 'forminator' ) );
 								} else {
 									$row[] = '';
@@ -622,6 +637,7 @@ class Forminator_Export {
 				$fields_array = $model->get_fields_as_array();
 				$map_entries  = Forminator_Form_Entry_Model::map_polls_entries_for_export( $form_id, $fields_array );
 				$header       = array(
+					esc_html__( 'Submission ID', 'forminator' ),
 					esc_html__( 'Date', 'forminator' ),
 					esc_html__( 'Answer', 'forminator' ),
 					esc_html__( 'Extra', 'forminator' ),
@@ -638,6 +654,7 @@ class Forminator_Export {
 					$entry = new Forminator_Form_Entry_Model( $map_entry['entry_id'] );
 					$extra = $entry->get_meta( 'extra', null );
 					$row   = array(
+						$entry->entry_id,
 						$entry->time_created,
 						$label,
 						$extra,
@@ -783,9 +800,9 @@ class Forminator_Export {
 					);
 				}
 				// Convert to string first, then apply draft label conversion if needed.
-				$value                          = Forminator_Form_Entry_Model::meta_value_to_string( $mapper['type'], $meta_value, false, PHP_INT_MAX, $mapper['field'] );
-				$value                          = forminator_maybe_get_draft_field_labels( $entry, $mapper['meta_key'], $mapper['type'], $meta_value, $value );
-				$temp_data[ $mapper['type'] ][] = $value;
+				$meta_value                     = Forminator_Form_Entry_Model::meta_value_to_string( $mapper['type'], $meta_value, false, PHP_INT_MAX, $mapper['field'] );
+				$meta_value                     = forminator_resolve_draft_display_value( $entry, $slug, $mapper['type'], $meta_value, $model );
+				$temp_data[ $mapper['type'] ][] = $meta_value;
 			} else {
 
 				// sub_metas available.
@@ -964,6 +981,12 @@ class Forminator_Export {
 		$field_mappers = self::get_mappers( $fields, $model );
 		$mappers       = array_merge(
 			array(
+				array(
+					// read form model's property.
+					'property' => 'entry_id', // Submission ID.
+					'label'    => esc_html__( 'Submission ID', 'forminator' ),
+					'type'     => 'entry_id',
+				),
 				array(
 					// read form model's property.
 					'property' => 'time_created', // must be on export.

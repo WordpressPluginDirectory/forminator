@@ -937,6 +937,26 @@ function forminator_get_current_url() {
 }
 
 /**
+ * Detect whether current request comes from Breakdance builder SSR preview.
+ *
+ * @since 1.54.0
+ *
+ * @return bool
+ */
+function forminator_is_breakdance_builder_preview() {
+
+	$action              = Forminator_Core::sanitize_text_field( 'action' );
+	$page_id             = (int) Forminator_Core::sanitize_text_field( 'page_id' );
+	$triggering_document = (int) Forminator_Core::sanitize_text_field( 'triggeringDocument' );
+	$document_id         = $triggering_document ? $triggering_document : $page_id;
+
+	if ( 'breakdance_server_side_render' !== $action || ! $document_id ) {
+		return false;
+	}
+
+	return current_user_can( 'edit_post', $document_id );
+}
+/**
  * Detect whether current request comes from any page builder preveiw page
  *
  * @since 1.13
@@ -975,6 +995,17 @@ function forminator_is_page_builder_preview() {
 	$action         = Forminator_Core::sanitize_text_field( 'action' );
 	$editor_post_id = (int) Forminator_Core::sanitize_text_field( 'editor_post_id' );
 	if ( defined( 'ELEMENTOR_VERSION' ) && 'elementor_ajax' === $action && $editor_post_id ) {
+		$decision = true;
+		return $decision;
+	}
+
+	// Check Oxygen plugin.
+	if (
+		defined( '__BREAKDANCE_VERSION' ) &&
+		defined( 'BREAKDANCE_MODE' ) &&
+		'oxygen' === BREAKDANCE_MODE &&
+		forminator_is_breakdance_builder_preview()
+	) {
 		$decision = true;
 		return $decision;
 	}
@@ -1876,6 +1907,59 @@ function forminator_delete_permissions() {
 }
 
 /**
+ * Validate captcha placement in paginated forms.
+ *
+ * Ensures that if a form has pagination (page-breaks), then captcha field
+ * must be placed only on the last page. This prevents users from bypassing
+ * captcha validation by navigating past the captcha page.
+ *
+ * @param array $fields Form fields array from template.
+ * @return bool|WP_Error True if valid, WP_Error if captcha is not on last page.
+ *
+ * @since 1.55.0
+ */
+function forminator_validate_captcha_placement_in_paginated_forms( $fields ) {
+	// Track the last page-break and earliest captcha positions.
+	$last_page_break_position = -1;
+	$first_captcha_position   = -1;
+
+	foreach ( $fields as $wrapper_index => $wrapper ) {
+		if ( ! isset( $wrapper['fields'] ) || ! is_array( $wrapper['fields'] ) ) {
+			continue;
+		}
+
+		foreach ( $wrapper['fields'] as $field ) {
+			if ( ! isset( $field['type'] ) ) {
+				continue;
+			}
+
+			switch ( $field['type'] ) {
+				case 'page-break':
+					if ( $wrapper_index > $last_page_break_position ) {
+						$last_page_break_position = $wrapper_index;
+					}
+					break;
+
+				case 'captcha':
+					if ( -1 === $first_captcha_position || $wrapper_index < $first_captcha_position ) {
+						$first_captcha_position = $wrapper_index;
+					}
+					break;
+			}
+		}
+	}
+
+	if ( $first_captcha_position < $last_page_break_position ) {
+		return new WP_Error(
+			'captcha_placement_invalid',
+			esc_html__( 'Captcha can only be placed on the last page in a paginated form.', 'forminator' )
+		);
+	}
+
+	return true;
+}
+
+/**
  * Searches for $needle in the multidimensional array $haystack.
  *
  * @url https://stackoverflow.com/a/28473219
@@ -1944,17 +2028,18 @@ function forminator_get_accessible_user_roles() {
 }
 
 /**
- * Validate registration form settings.
+ * Check registration form permissions and access.
  *
  * @param array $settings Settings.
  * @return bool|WP_Error
  */
-function forminator_validate_registration_form_settings( $settings ) {
+function forminator_check_registration_form_permissions( $settings ) {
 	if ( ! empty( $settings['form-type'] ) && 'registration' === $settings['form-type'] ) {
 		$error_message = esc_html__( 'Unfortunately, you do not have the required permissions or user role to perform this action.', 'forminator' );
 		if ( ! current_user_can( 'create_users' ) ) {
 			return new WP_Error( 'invalid_access', $error_message );
 		}
+
 		$roles = forminator_get_accessible_user_roles();
 		if ( isset( $settings['registration-user-role'] ) && 'fixed' === $settings['registration-user-role'] ) {
 			if ( isset( $settings['registration-role-field'] ) && ! isset( $roles[ $settings['registration-role-field'] ] )
@@ -1970,6 +2055,38 @@ function forminator_validate_registration_form_settings( $settings ) {
 			}
 		}
 	}
+	return true;
+}
+
+/**
+ * Validate registration form settings.
+ *
+ * @param array $settings Settings.
+ * @return bool|WP_Error
+ */
+function forminator_validate_registration_form_settings( $settings ) {
+	// Check permissions first.
+	$permission_check = forminator_check_registration_form_permissions( $settings );
+	if ( is_wp_error( $permission_check ) ) {
+		return $permission_check;
+	}
+
+	// Always validate required fields for registration forms.
+	if ( ! empty( $settings['form-type'] ) && 'registration' === $settings['form-type'] ) {
+		$required_message = esc_html__( 'Please map all required user fields before saving this registration form.', 'forminator' );
+		$required_fields  = array(
+			'registration-username-field',
+			'registration-email-field',
+			'registration-password-field',
+		);
+
+		foreach ( $required_fields as $required_field ) {
+			if ( ! isset( $settings[ $required_field ] ) || '' === trim( (string) $settings[ $required_field ] ) ) {
+				return new WP_Error( 'invalid_required_mapping', $required_message );
+			}
+		}
+	}
+
 	return true;
 }
 
