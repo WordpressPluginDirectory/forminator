@@ -1438,6 +1438,8 @@ abstract class Forminator_Render_Form {
 			return;
 		}
 
+		// Preview uses a distinct nonce action so a public-page load nonce cannot
+		// authorize attacker-forced preview / preview_data via parameter collisions.
 		$ajax_options = array(
 			'action'           => 'forminator_load_' . static::$module_slug,
 			'type'             => $this->model->get_post_type(),
@@ -1446,7 +1448,7 @@ abstract class Forminator_Render_Form {
 			'is_preview'       => $is_preview,
 			'preview_data'     => $preview_data,
 			'last_submit_data' => $this->last_submitted_data,
-			'nonce'            => wp_create_nonce( 'forminator_load_module' ),
+			'nonce'            => wp_create_nonce( $is_preview ? 'forminator_load_module_preview' : 'forminator_load_module' ),
 			'extra'            => array(
 				'_wp_http_referer' => Forminator_Core::sanitize_text_field( $_SERVER['REQUEST_URI'] ), // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 				'page_id'          => $this->get_post_id(),
@@ -1534,8 +1536,8 @@ abstract class Forminator_Render_Form {
 		$is_preview   = filter_input( INPUT_POST, 'is_preview', FILTER_VALIDATE_BOOLEAN );
 		$live_preview = filter_input( INPUT_POST, 'instant_preview', FILTER_VALIDATE_BOOLEAN );
 
-		// For preview, nonce verification is required to ensure the request is legitimate.
-		if ( $is_preview && ! wp_verify_nonce( $nonce, 'forminator_load_module' ) ) {
+		// Preview requires the preview-specific nonce (not the public load nonce).
+		if ( $is_preview && ! wp_verify_nonce( $nonce, 'forminator_load_module_preview' ) ) {
 			wp_send_json_error( new WP_Error( 'invalid_code' ) );
 		}
 
@@ -1545,8 +1547,8 @@ abstract class Forminator_Render_Form {
 
 		$preview_data      = array();
 		$lead_preview_data = array();
-		if ( $is_preview ) {
-			$preview_data      = isset( $_POST['preview_data'] ) ? Forminator_Core::sanitize_array( $_POST['preview_data'], 'preview_data' ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		if ( $is_preview && current_user_can( forminator_get_permission( 'forminator-cform' ) ) ) {
+			$preview_data      = $_POST['preview_data'] ?? array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			$lead_preview_data = isset( $_POST['lead_preview_data'] ) ? Forminator_Core::sanitize_array( $_POST['lead_preview_data'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 		}
 		$id               = filter_input( INPUT_POST, 'id', FILTER_VALIDATE_INT );
@@ -1567,8 +1569,10 @@ abstract class Forminator_Render_Form {
 
 		if ( ! empty( $preview_data ) ) {
 			if ( ! is_array( $preview_data ) ) {
+				$preview_data = wp_unslash( $preview_data );
 				$preview_data = json_decode( $preview_data, true );
 			}
+			$preview_data = Forminator_Core::sanitize_array( $preview_data, 'preview_data', true );
 		}
 
 		// Force set the render id as each ajax request requires specific render_id.
@@ -1623,14 +1627,19 @@ abstract class Forminator_Render_Form {
 			wp_send_json_error( new WP_Error( 'invalid_nonce' ) );
 		}
 
+		if ( ! current_user_can( forminator_get_permission( 'forminator-cform' ) ) ) {
+			wp_send_json_error( new WP_Error( 'invalid_request' ) );
+		}
+
 		$id    = filter_input( INPUT_POST, 'id', FILTER_VALIDATE_INT );
 		$model = Forminator_Base_Form_Model::get_model( $id );
 
 		if ( 'form' !== $model::$module_slug ) {
 			wp_send_json_error( new WP_Error( 'invalid_module_type' ) );
 		}
-		$preview_data = isset( $_POST['preview_data'] ) ? Forminator_Core::sanitize_array( $_POST['preview_data'], 'preview_data' ) : '{}'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		$preview_data = isset( $_POST['preview_data'] ) ? wp_unslash( $_POST['preview_data'] ) : '{}'; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 		$preview_data = json_decode( $preview_data, true );
+		$preview_data = Forminator_Core::sanitize_array( $preview_data, 'preview_data', true );
 
 		if ( ! empty( $preview_data['settings'] ) ) {
 			$model->settings = $preview_data['settings'];
@@ -1934,10 +1943,6 @@ abstract class Forminator_Render_Form {
 	 * @return string
 	 */
 	protected function nonce_field( $action, $name, $referer_url = '' ) {
-		// Don't generate nonce field when it's preview, as preview is only for admin and it doesn't have real form action.
-		if ( $this->is_preview ) {
-			return '';
-		}
 		if ( $referer_url ) {
 			$referer = $referer_url;
 		} elseif ( ! empty( $this->_wp_http_referer ) ) {
@@ -2002,12 +2007,17 @@ abstract class Forminator_Render_Form {
 			return;
 		}
 
-		$draft = new Forminator_Form_Entry_Model( $this->draft_id );
-		if ( is_null( $draft->form_id ) && $is_draft_enabled ) {
-			return esc_html__( 'Can\'t find the draft associated with the draft ID in the URL. This draft was either submitted or has expired.', 'forminator' );
+		$draft_not_found = esc_html__( 'Can\'t find the draft associated with the draft ID in the URL. This draft was either submitted or has expired.', 'forminator' );
+		if ( is_numeric( $this->draft_id ) ) {
+			return $draft_not_found;
 		}
 
-		if ( (int) $draft->form_id === $this->model->id ) {
+		$draft = new Forminator_Form_Entry_Model( $this->draft_id );
+		if ( is_null( $draft->form_id ) ) {
+			return $draft_not_found;
+		}
+
+		if ( (int) $draft->form_id === $this->model->id && 'draft' === $draft->status ) {
 			$this->draft_data = $draft->meta_data;
 		}
 	}
