@@ -1056,6 +1056,28 @@ function forminator_is_page_builder_preview() {
 }
 
 /**
+ * Detect a Divi 5 Visual Builder shortcode-render request
+ * (et_pb_preview endpoint with is_fb_preview set).
+ *
+ * @since 1.57.0
+ *
+ * @return bool
+ */
+function forminator_is_divi5_vb_shortcode_request() {
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- nonce is verified below.
+	if ( ! isset( $_GET['et_pb_preview'] ) || ! isset( $_POST['is_fb_preview'] ) ) {
+		return false;
+	}
+
+	$nonce = isset( $_GET['et_pb_preview_nonce'] )
+		? sanitize_text_field( wp_unslash( $_GET['et_pb_preview_nonce'] ) )
+		: '';
+	// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+	return (bool) wp_verify_nonce( $nonce, 'et_pb_preview_nonce' );
+}
+
+/**
  * Return week day from number
  *
  * @since 1.0
@@ -2084,18 +2106,19 @@ function forminator_check_registration_form_permissions( $settings ) {
 		}
 
 		$roles = forminator_get_accessible_user_roles();
-		if ( isset( $settings['registration-user-role'] ) && 'fixed' === $settings['registration-user-role'] ) {
-			if ( isset( $settings['registration-role-field'] ) && ! isset( $roles[ $settings['registration-role-field'] ] )
-				&& 'notCreate' !== $settings['registration-role-field'] ) { // Respect the "Don't create a user in the network's main site" option.
-				return new WP_Error( 'invalid_user_role', $error_message );
-			}
-		} elseif ( ! empty( $settings['user_role'] ) && is_array( $settings['user_role'] ) ) {
-			foreach ( $settings['user_role'] as $user_role ) {
-				if ( isset( $user_role['role'] ) && ! isset( $roles[ $user_role['role'] ] )
-					&& 'notCreate' !== $user_role['role'] ) { // Respect the "Don't create a user in the network's main site" option.
-					return new WP_Error( 'invalid_user_role', $error_message );
+		// Registration honours the conditional roles only for the `conditionally` mode, any other value assigns the fixed role.
+		if ( isset( $settings['registration-user-role'] ) && 'conditionally' === $settings['registration-user-role'] ) {
+			if ( ! empty( $settings['user_role'] ) && is_array( $settings['user_role'] ) ) {
+				foreach ( $settings['user_role'] as $user_role ) {
+					if ( isset( $user_role['role'] ) && ! isset( $roles[ $user_role['role'] ] )
+						&& 'notCreate' !== $user_role['role'] ) { // Respect the "Don't create a user in the network's main site" option.
+						return new WP_Error( 'invalid_user_role', $error_message );
+					}
 				}
 			}
+		} elseif ( isset( $settings['registration-role-field'] ) && ! isset( $roles[ $settings['registration-role-field'] ] )
+			&& 'notCreate' !== $settings['registration-role-field'] ) { // Respect the "Don't create a user in the network's main site" option.
+			return new WP_Error( 'invalid_user_role', $error_message );
 		}
 	}
 	return true;
