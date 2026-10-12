@@ -318,8 +318,8 @@ class Forminator_Currency extends Forminator_Field {
 	 */
 	public function validate( $field, $data ) {
 		$id             = self::get_property( 'element_id', $field );
-		$max            = self::get_property( 'limit_max', $field, $data );
-		$min            = self::get_property( 'limit_min', $field, $data );
+		$max            = self::get_property( 'limit_max', $field );
+		$min            = self::get_property( 'limit_min', $field );
 		$custom_message = self::get_property( 'limit_message', $field, false, 'bool' );
 		$precision      = self::get_calculable_precision( $field );
 		$separator      = self::get_property( 'separators', $field, 'blank' );
@@ -344,7 +344,8 @@ class Forminator_Currency extends Forminator_Field {
 			}
 		}
 
-		if ( ! empty( $data ) ) {
+		// '0' is a value too, so it must respect the limits.
+		if ( ! empty( $data ) || '0' === $data ) {
 				// Currency must be a single numeric value. Reject non-scalar input such
 				// as currency-1[]=x, which would otherwise bypass the bounds checks via
 				// PHP type juggling (an array is never less than a numeric minimum).
